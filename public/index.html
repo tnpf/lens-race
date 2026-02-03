@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ImgPath - Image Navigation Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="app"></div>
+    <script>
+const APP_URL = window.location.origin;
+let state = {
+    screen: 'home',
+    apiKey: '',
+    currentImage: '',
+    targetImage: '',
+    targetName: '',
+    results: [],
+    labels: [],
+    moves: 0,
+    time: 0,
+    timerInterval: null,
+    gameWon: false,
+    gameMode: '',
+    showGiveUp: false,
+    showLens: false,
+    isDragging: false,
+    dragStart: null,
+    cropBox: null,
+    campaignLevel: 1,
+    completedLevels: []
+};
+
+const challenges = [
+    { id: 1, start: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800', target: 'https://images.unsplash.com/photo-1485871981521-5b1fd3805eee?w=800', targetName: 'Statue of Liberty' },
+    { id: 2, start: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800', target: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=800', targetName: 'Eiffel Tower' },
+    { id: 3, start: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=800', target: 'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?w=800', targetName: 'Big Ben' }
+];
+
+function render() {
+    const app = document.getElementById('app');
+    
+    if (state.screen === 'home') {
+        app.innerHTML = `
+            <div class="min-h-screen bg-gray-50 p-4">
+                <div class="max-w-2xl mx-auto pt-12">
+                    <div class="text-center mb-12">
+                        <h1 class="text-6xl font-bold text-gray-800 tracking-tight mb-2">ImgPath</h1>
+                    </div>
+                    <div class="space-y-3">
+                        <button onclick="startGame('quick')" class="w-full p-5 text-white rounded-xl flex items-center gap-4 transition-all hover:opacity-90" style="background-color: #6aaa64">
+                            <div class="w-12 h-12 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">▶</div>
+                            <div class="flex-1 text-left"><div class="font-bold text-lg">Quick Play</div><div class="text-sm opacity-90">Jump right in</div></div>
+                        </button>
+                        <button onclick="showScreen('campaign')" class="w-full p-5 text-white rounded-xl flex items-center gap-4 transition-all hover:opacity-90" style="background-color: #445e93">
+                            <div class="w-12 h-12 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">▦</div>
+                            <div class="flex-1 text-left"><div class="font-bold text-lg">Journey Mode</div><div class="text-sm opacity-90">Progress through levels</div></div>
+                        </button>
+                        <button class="w-full p-5 text-white rounded-xl flex items-center gap-4 cursor-not-allowed" style="background-color: #f1c40f">
+                            <div class="w-12 h-12 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">👥</div>
+                            <div class="flex-1 text-left"><div class="font-bold text-lg">Multiplayer</div><div class="text-sm opacity-90">Race against others</div></div>
+                        </button>
+                        <button class="w-full p-5 text-white rounded-xl flex items-center gap-4 cursor-not-allowed" style="background-color: #e8a0a0">
+                            <div class="w-12 h-12 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">📅</div>
+                            <div class="flex-1 text-left"><div class="font-bold text-lg">Daily Challenge</div><div class="text-sm opacity-90">Today's puzzle</div></div>
+                        </button>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 mt-8">
+                        <button onclick="showScreen('achievements')" class="flex items-center justify-center gap-2 p-4 bg-white border-2 border-gray-200 rounded-xl hover:border-gray-300">
+                            <span class="text-2xl">🏆</span><span class="font-semibold text-gray-700">Achievements</span>
+                        </button>
+                        <button onclick="showScreen('stats')" class="flex items-center justify-center gap-2 p-4 bg-white border-2 border-gray-200 rounded-xl hover:border-gray-300">
+                            <span class="text-2xl">📊</span><span class="font-semibold text-gray-700">Stats</span>
+                        </button>
+                    </div>
+                    <div class="mt-4">
+                        <button onclick="showScreen('about')" class="w-full p-4 bg-white border-2 border-gray-200 rounded-xl hover:border-gray-300 font-semibold text-gray-700">About</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    } else if (state.screen === 'setup') {
+        app.innerHTML = `
+            <div class="min-h-screen bg-gray-50 p-4 flex items-center justify-center">
+                <div class="max-w-md w-full bg-white rounded-2xl p-8 shadow-xl border-2 border-gray-200">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-2 text-center">Enter API Key</h2>
+                    <p class="text-gray-600 text-center mb-6">You need a Google Vision API key to play</p>
+                    <input type="password" id="api-key-input" value="${state.apiKey}" placeholder="Paste your API key here..." class="w-full p-4 border-2 border-gray-300 rounded-lg mb-4 focus:border-blue-500 focus:outline-none font-mono text-sm">
+                    <button onclick="saveApiKey()" class="w-full bg-green-500 text-white font-bold py-4 rounded-lg hover:bg-green-600 mb-4" style="background-color: #6aaa64">Start Playing</button>
+                    <button onclick="showScreen('home')" class="w-full text-gray-600 hover:text-gray-800 font-medium">← Back</button>
+                    <div class="mt-6 p-4 bg-blue-50 rounded-lg">
+                        <p class="text-sm text-blue-900 font-medium mb-2">Don't have an API key?</p>
+                        <p class="text-xs text-blue-700 mb-2">Get one free at <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="underline font-semibold">Google Cloud Console</a></p>
+                        <p class="text-xs text-blue-700">Enable "Cloud Vision API" and create an API key. Free tier includes 1,000 requests/month.</p>
+                    </div>
+                </div>
+            </div>
+        `;
+    } else if (state.screen === 'campaign') {
+        let gridHTML = '';
+        const colors = ['#6aaa64', '#445e93', '#f1c40f', '#e8a0a0'];
+        for (let i = 0; i < 20; i++) {
+            const level = i + 1;
+            const completed = state.completedLevels.includes(level);
+            const locked = level > 1 && !state.completedLevels.includes(level - 1);
+            const color = locked ? '#e5e7eb' : colors[i % 4];
+            const textColor = locked ? 'text-gray-400' : 'text-white';
+            gridHTML += `
+                <button onclick="${locked ? '' : `startGame('campaign', ${level})`}" ${locked ? 'disabled' : ''} 
+                    style="background-color: ${color}" 
+                    class="aspect-square rounded-lg flex flex-col items-center justify-center font-bold text-base ${textColor} ${locked ? 'cursor-not-allowed' : 'hover:scale-105'} transition-all">
+                    ${completed ? '✓' : level}
+                </button>
+            `;
+        }
+        app.innerHTML = `
+            <div class="min-h-screen bg-gray-50 p-4">
+                <div class="max-w-4xl mx-auto pt-8">
+                    <div class="flex items-center justify-between mb-8">
+                        <button onclick="showScreen('home')" class="text-gray-600 hover:text-gray-800">← Back</button>
+                        <h2 class="text-3xl font-bold text-gray-800">Journey Mode</h2>
+                        <div class="w-20"></div>
+                    </div>
+                    <div class="grid grid-cols-5 md:grid-cols-8 gap-2">${gridHTML}</div>
+                </div>
+            </div>
+        `;
+    } else if (state.screen === 'about') {
+        app.innerHTML = `
+            <div class="min-h-screen bg-gray-50 p-4">
+                <div class="max-w-3xl mx-auto pt-8">
+                    <div class="flex items-center justify-between mb-8">
+                        <button onclick="showScreen('home')" class="text-gray-600 hover:text-gray-800">← Back</button>
+                        <h2 class="text-3xl font-bold text-gray-800">About ImgPath</h2>
+                        <div class="w-20"></div>
+                    </div>
+                    <div class="bg-white rounded-2xl p-8 border-2 border-gray-200 space-y-6">
+                        <div><h3 class="text-xl font-bold text-gray-800 mb-3">What is ImgPath?</h3><p class="text-gray-700 leading-relaxed">ImgPath is an image navigation puzzle game powered by Google Cloud Vision API. Your goal is to navigate from a starting image to a target image by clicking through visually similar images.</p></div>
+                        <div><h3 class="text-xl font-bold text-gray-800 mb-3">How to Play</h3><ul class="space-y-2 text-gray-700"><li>• Each round shows you a target image and a starting image</li><li>• Click on similar images to navigate closer to your target</li><li>• Use the lens tool to search specific regions</li><li>• Reach the target in as few moves and as quickly as possible</li></ul></div>
+                    </div>
+                </div>
+            </div>
+        `;
+    } else if (state.screen === 'achievements') {
+        app.innerHTML = `
+            <div class="min-h-screen bg-gray-50 p-4">
+                <div class="max-w-3xl mx-auto pt-8">
+                    <div class="flex items-center justify-between mb-8">
+                        <button onclick="showScreen('home')" class="text-gray-600 hover:text-gray-800">← Back</button>
+                        <h2 class="text-3xl font-bold text-gray-800">Achievements</h2>
+                        <div class="w-20"></div>
+                    </div>
+                    <div class="space-y-3">
+                        <div class="p-4 rounded-xl border-2 bg-white border-yellow-400 flex items-center gap-4">
+                            <div class="w-12 h-12 rounded-full flex items-center justify-center bg-yellow-400"><span class="text-2xl">🏆</span></div>
+                            <div class="flex-1"><h3 class="font-bold text-gray-800">First Victory</h3><p class="text-sm text-gray-600">Win your first game</p></div>
+                            <div class="text-sm font-semibold text-gray-700">+50 XP</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    } else if (state.screen === 'stats') {
+        app.innerHTML = `
+            <div class="min-h-screen bg-gray-50 p-4">
+                <div class="max-w-3xl mx-auto pt-8">
+                    <div class="flex items-center justify-between mb-8">
+                        <button onclick="showScreen('home')" class="text-gray-600 hover:text-gray-800">← Back</button>
+                        <h2 class="text-3xl font-bold text-gray-800">Your Stats</h2>
+                        <div class="w-20"></div>
+                    </div>
+                    <div class="bg-gradient-to-r from-green-500 to-blue-600 text-white p-6 rounded-xl mb-6" style="background: linear-gradient(to right, #6aaa64, #445e93)">
+                        <div class="flex items-center justify-between mb-4">
+                            <div><div class="text-sm opacity-90">Level</div><div class="text-4xl font-bold">12</div></div>
+                            <div class="text-right"><div class="text-sm opacity-90">Total XP</div><div class="text-4xl font-bold">2,450</div></div>
+                        </div>
+                        <div class="bg-white bg-opacity-20 rounded-full h-3"><div class="bg-white h-3 rounded-full" style="width: 65%"></div></div>
+                        <div class="text-sm mt-2 opacity-90">650 / 1000 XP to next level</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    } else if (state.screen === 'game') {
+        const statusClass = state.gameWon ? 'bg-green-500 text-white text-lg' : 'bg-blue-50 text-blue-700';
+        const resultsHTML = state.results.map((img, i) => `
+            <div onclick="handleImageClick('${img.url}')" class="cursor-pointer rounded-lg overflow-hidden border-2 border-gray-200 hover:border-green-500 hover:scale-105 transition-all" style="border-color: #6aaa64">
+                <img src="${img.url}" alt="${img.title}" class="w-full h-32 object-cover" crossorigin="anonymous">
+            </div>
+        `).join('');
+        
+        app.innerHTML = `
+            <div class="min-h-screen bg-gray-50 p-4">
+                <div class="max-w-5xl mx-auto">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-3">
+                            <div class="bg-white px-4 py-2 rounded-lg border-2 border-gray-200 font-mono font-bold text-lg">${formatTime(state.time)}</div>
+                            <div class="bg-white px-4 py-2 rounded-lg border-2 border-gray-200 font-bold">Moves: ${state.moves}</div>
+                        </div>
+                        <button onclick="showGiveUpDialog()" ${state.gameWon ? 'disabled' : ''} class="px-4 py-2 bg-white border-2 border-red-200 text-red-600 rounded-lg font-semibold hover:border-red-300">Give Up</button>
+                    </div>
+                    <div class="bg-yellow-50 border-2 border-yellow-400 rounded-xl p-4 mb-4 flex items-center gap-4">
+                        <div class="text-2xl">🎯</div>
+                        <div class="flex-1"><div class="text-sm font-semibold text-yellow-800">TARGET</div><div class="font-bold text-lg text-yellow-900">${state.targetName}</div></div>
+                        <img src="${state.targetImage}" alt="Target" class="w-20 h-20 object-cover rounded-lg border-2 border-yellow-400">
+                    </div>
+                    ${state.status ? `<div class="p-3 rounded-xl mb-4 text-center font-semibold ${statusClass}">${state.status}</div>` : ''}
+                    <div class="bg-white rounded-xl border-2 border-gray-200 p-2 mb-4">
+                        <div class="relative" id="image-container">
+                            <img id="current-image" src="${state.currentImage}" alt="Current" class="w-full rounded-lg" crossorigin="anonymous">
+                            ${!state.showLens ? `
+                                <button onclick="activateLens()" class="absolute bottom-4 right-4 w-12 h-12 bg-white rounded-full shadow-lg border-2 border-gray-300 flex items-center justify-center hover:scale-110 transition-transform">
+                                    <svg class="w-6 h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                                    </svg>
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                    ${state.results.length > 0 ? `<div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">${resultsHTML}</div>` : ''}
+                </div>
+            </div>
+            ${state.showGiveUp ? `
+                <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div class="bg-white rounded-2xl p-6 max-w-sm w-full">
+                        <h3 class="text-xl font-bold text-gray-800 mb-3">Give up?</h3>
+                        <p class="text-gray-600 mb-6">This will count as a loss and add a move.</p>
+                        <div class="flex gap-3">
+                            <button onclick="closeGiveUpDialog()" class="flex-1 px-4 py-3 bg-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-300">Keep Playing</button>
+                            <button onclick="giveUp()" class="flex-1 px-4 py-3 bg-red-500 text-white rounded-xl font-semibold hover:bg-red-600">Give Up</button>
+                        </div>
+                    </div>
+                </div>
+            ` : ''}
+        `;
+        
+        if (!state.timerInterval && !state.gameWon) {
+            state.timerInterval = setInterval(() => {
+                state.time++;
+                render();
+            }, 1000);
+        }
+    }
+}
+
+function showScreen(screen) {
+    state.screen = screen;
+    render();
+}
+
+function startGame(mode, level = null) {
+    if (!state.apiKey) {
+        state.gameMode = mode;
+        if (level) state.campaignLevel = level;
+        state.screen = 'setup';
+        render();
+        return;
+    }
+    
+    const challenge = level ? challenges[level - 1] : challenges[Math.floor(Math.random() * challenges.length)];
+    state.gameMode = mode;
+    state.targetImage = challenge.target;
+    state.targetName = challenge.targetName;
+    state.currentImage = challenge.start;
+    state.moves = 0;
+    state.time = 0;
+    state.gameWon = false;
+    state.screen = 'game';
+    state.results = [];
+    state.status = '';
+    render();
+    setTimeout(() => searchImage(state.currentImage), 500);
+}
+
+function saveApiKey() {
+    const input = document.getElementById('api-key-input');
+    state.apiKey = input.value.trim();
+    if (state.apiKey) {
+        if (state.gameMode === 'campaign') {
+            startGame('campaign', state.campaignLevel);
+        } else {
+            startGame(state.gameMode);
+        }
+    }
+}
+
+async function searchImage(imageUrl) {
+    if (imageUrl === state.targetImage) {
+        handleWin();
+        return;
+    }
+    
+    state.status = 'Analyzing...';
+    render();
+    
+    try {
+        const base64 = await imageToBase64(imageUrl);
+        const response = await fetch(`${APP_URL}/api/analyze`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imageData: base64, apiKey: state.apiKey })
+        });
+        
+        const data = await response.json();
+        const visionData = data.responses[0];
+        
+        // SafeSearch check
+        if (visionData.safeSearchAnnotation) {
+            const ss = visionData.safeSearchAnnotation;
+            if (['LIKELY', 'VERY_LIKELY'].includes(ss.adult) || ['LIKELY', 'VERY_LIKELY'].includes(ss.violence)) {
+                state.status = 'Content filtered. Try another path.';
+                state.results = [];
+                render();
+                return;
+            }
+        }
+        
+        // Get images
+        let images = [];
+        if (visionData.webDetection) {
+            const wd = visionData.webDetection;
+            if (wd.pagesWithMatchingImages) {
+                images = wd.pagesWithMatchingImages
+                    .filter(p => p.fullMatchingImages)
+                    .flatMap(p => p.fullMatchingImages.map(img => ({
+                        url: img.url,
+                        title: p.pageTitle || 'Similar image',
+                        source: p.url
+                    })));
+            }
+            if (images.length < 5 && wd.visuallySimilarImages) {
+                images = [...images, ...wd.visuallySimilarImages.map(img => ({
+                    url: img.url,
+                    title: 'Visually similar',
+                    source: img.url
+                }))];
+            }
+        }
+        
+        // Filter out maps/streetview
+        images = images.filter(img => {
+            const url = img.url.toLowerCase();
+            return !url.includes('maps.google') && !url.includes('streetview');
+        });
+        
+        state.results = images.slice(0, 20);
+        state.status = `Found ${images.length} images. Click one to continue!`;
+        render();
+    } catch (error) {
+        state.status = 'Error: ' + error.message;
+        render();
+    }
+}
+
+function imageToBase64(url) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            resolve(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]);
+        };
+        img.onerror = () => reject(new Error('Failed to load image'));
+        img.src = url;
+    });
+}
+
+function handleImageClick(imgUrl) {
+    state.currentImage = imgUrl;
+    state.results = [];
+    state.moves++;
+    render();
+    setTimeout(() => searchImage(imgUrl), 300);
+}
+
+function handleWin() {
+    state.gameWon = true;
+    clearInterval(state.timerInterval);
+    state.timerInterval = null;
+    const xp = Math.max(10, 100 - (state.moves * 5) - state.time);
+    state.status = `🎉 Victory! +${xp} XP | Time: ${formatTime(state.time)} | Moves: ${state.moves}`;
+    if (state.gameMode === 'campaign') {
+        state.completedLevels.push(state.campaignLevel);
+    }
+    render();
+}
+
+function showGiveUpDialog() {
+    state.showGiveUp = true;
+    render();
+}
+
+function closeGiveUpDialog() {
+    state.showGiveUp = false;
+    render();
+}
+
+function giveUp() {
+    state.moves++;
+    clearInterval(state.timerInterval);
+    state.timerInterval = null;
+    state.screen = state.gameMode === 'campaign' ? 'campaign' : 'home';
+    state.showGiveUp = false;
+    render();
+}
+
+function activateLens() {
+    state.showLens = true;
+    render();
+}
+
+function formatTime(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+// Initial render
+render();
+    </script>
+</body>
+</html>
